@@ -36,23 +36,22 @@
 
             <p>Etiam porta nibh ligula, a tincidunt mi porta in. Suspendisse pulvinar felis quis arcu imperdiet ornare. Fusce vel massa sit amet massa aliquet condimentum et in nunc. Pellentesque dignissim mattis magna, in dapibus dui vehicula eget. Maecenas enim velit, cursus in urna a, sollicitudin semper quam. Curabitur eget fringilla orci. Suspendisse luctus eros et est luctus placerat id ultrices ex. Pellentesque lacinia accumsan ex elementum iaculis. Aliquam turpis purus, mattis ac tempor ut, venenatis et ex. Aliquam erat volutpat. Aliquam gravida tincidunt accumsan.</p>
 
-            <pre><code class="python">
-from setuptools import setup, find_packages
-  try:
+            <pre><code class="python">from setuptools import setup, find_packages
+try:
     import pypandoc
     long_description = pypandoc.convert('README.md', 'rst')
-  except(IOError, ImportError):
+except(IOError, ImportError):
     long_description = open('README.md').read()
 
-  setup(name='allennlp',
+setup(name='allennlp',
       version='0.1.1',
       description='A Natural Language Processing toolkit using distributed representations',
       long_description=long_description,
       classifiers=[
-        'Development Status :: 3 - Alpha',
-        'License :: OSI Approved :: Apache Software License',
-        'Programming Language :: Python :: 3.5',
-        'Topic :: Scientific/Engineering :: Artificial Intelligence',
+          'Development Status :: 3 - Alpha',
+          'License :: OSI Approved :: Apache Software License',
+          'Programming Language :: Python :: 3.5',
+          'Topic :: Scientific/Engineering :: Artificial Intelligence',
       ],
       keywords='allennlp NLP deep learning machine reading',
       url='https://github.com/allenai/allennlp',
@@ -61,15 +60,15 @@ from setuptools import setup, find_packages
       license='Apache',
       packages=find_packages(),
       install_requires=[
-        'h5py',
-        'scikit-learn',
-        'pyhocon',
-        'typing',
-        'numpy',
-        'matplotlib',
-        'spacy',
-        'nltk',
-        'overrides'
+          'h5py',
+          'scikit-learn',
+          'pyhocon',
+          'typing',
+          'numpy',
+          'matplotlib',
+          'spacy',
+          'nltk',
+          'overrides'
       ],
       setup_requires=['pytest-runner'],
       tests_require=['pytest'],
