@@ -19,7 +19,7 @@ Here's a [tutorial video](https://www.youtube.com/watch?v=iWowJBRMtpc) that outl
 In order to make changes to the website you need to checkout the [`gh-pages`](https://github.com/allenai/allennlp/tree/gh-pages) branch on the [`allennlp`](https://github.com/allenai/allennlp) repo. The process for making changes is:
 
 1. Edit file(s) locally
-2. [Test changes](#running-jekyll-locally) in browser at *localhost*
+2. [Test changes](#install-jekyll-locally) in browser at *localhost*
 3. Commit changes and push to `gh-pages` branch
 4. Test changes in browser at http://www.allennlp.org (usually takes at least 30s to update)
 
