@@ -1549,6 +1549,10 @@ ul.publications li:last-child {
   padding-top: 0
 }
 
+.tutorial__content li p {
+  font-size: 1em;
+}
+
 @media screen and (max-width:960px) {
   .tutorial.constrained {
     padding: 1.125em
