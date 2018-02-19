@@ -1,10 +1,10 @@
 import re
-from typing import Any, Dict, List, Tuple
+from typing import List
 
 from overrides import overrides
-import spacy
 
 from allennlp.common import Params, Registrable
+from allennlp.common.util import get_spacy_model
 from allennlp.data.tokenizers.token import Token
 
 
@@ -16,6 +16,15 @@ class WordSplitter(Registrable):
     So, we're using "word splitter" here for this.
     """
     default_implementation = 'spacy'
+
+    def batch_split_words(self, sentences: List[str]) -> List[List[Token]]:
+        """
+        Spacy needs to do batch processing, or it can be really slow.  This method lets you take
+        advantage of that if you want.  Default implementation is to just iterate of the sentences
+        and call ``split_words``, but the ``SpacyWordSplitter`` will actually do batched
+        processing.
+        """
+        return [self.split_words(sentence) for sentence in sentences]
 
     def split_words(self, sentence: str) -> List[Token]:
         """
@@ -163,40 +172,27 @@ class SpacyWordSplitter(WordSplitter):
     A ``WordSplitter`` that uses spaCy's tokenizer.  It's fast and reasonable - this is the
     recommended ``WordSplitter``.
     """
-    # In order to avoid loading spacy models a whole bunch of times, we'll save references to them,
-    # keyed by the options we used to create the spacy model, so any particular configuration only
-    # gets loaded once.
-    _spacy_tokenizers: Dict[Tuple, Any] = {}
     def __init__(self,
-                 language: str = 'en',
+                 language: str = 'en_core_web_sm',
                  pos_tags: bool = False,
                  parse: bool = False,
                  ner: bool = False) -> None:
-        self.spacy = self._get_spacy_model(language, pos_tags, parse, ner)
+        self.spacy = get_spacy_model(language, pos_tags, parse, ner)
+
+    @overrides
+    def batch_split_words(self, sentences: List[str]) -> List[List[Token]]:
+        return self.spacy.pipe(sentences, n_threads=-1)
 
     @overrides
     def split_words(self, sentence: str) -> List[Token]:
-        return self.spacy(sentence)  # type: ignore
-
-    def _get_spacy_model(self, language: str, pos_tags: bool, parse: bool, ner: bool) -> Any:
-        options = (language, pos_tags, parse, ner)
-        if options not in self._spacy_tokenizers:
-            kwargs = {'vectors': False}
-            if not pos_tags:
-                kwargs['tagger'] = False
-            if not parse:
-                kwargs['parser'] = False
-            if not ner:
-                kwargs['entity'] = False
-            spacy_model = spacy.load(language, **kwargs)
-            self._spacy_tokenizers[options] = spacy_model
-        return self._spacy_tokenizers[options]
+        # This works because our Token class matches spacy's.
+        return [t for t in self.spacy(sentence) if not t.is_space]
 
     @classmethod
     def from_params(cls, params: Params) -> 'WordSplitter':
-        language = params.pop('language', 'en')
-        pos_tags = params.pop('pos_tags', False)
-        parse = params.pop('parse', False)
-        ner = params.pop('ner', False)
+        language = params.pop('language', 'en_core_web_sm')
+        pos_tags = params.pop_bool('pos_tags', False)
+        parse = params.pop_bool('parse', False)
+        ner = params.pop_bool('ner', False)
         params.assert_empty(cls.__name__)
         return cls(language, pos_tags, parse, ner)

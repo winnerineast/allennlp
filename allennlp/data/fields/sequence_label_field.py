@@ -1,8 +1,9 @@
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Set
 import logging
 
 from overrides import overrides
-import numpy
+import torch
+from torch.autograd import Variable
 
 from allennlp.common.checks import ConfigurationError
 from allennlp.common.util import pad_sequence_to_length
@@ -13,7 +14,7 @@ from allennlp.data.vocabulary import Vocabulary
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class SequenceLabelField(Field[numpy.ndarray]):
+class SequenceLabelField(Field[torch.Tensor]):
     """
     A ``SequenceLabelField`` assigns a categorical label to each element in a
     :class:`~allennlp.data.fields.sequence_field.SequenceField`.
@@ -37,6 +38,12 @@ class SequenceLabelField(Field[numpy.ndarray]):
         integers for you, and this parameter tells the ``Vocabulary`` object which mapping from
         strings to integers to use (so that "O" as a tag doesn't get the same id as "O" as a word).
     """
+    # It is possible that users want to use this field with a namespace which uses OOV/PAD tokens.
+    # This warning will be repeated for every instantiation of this class (i.e for every data
+    # instance), spewing a lot of warnings so this class variable is used to only log a single
+    # warning per namespace.
+    _already_warned_namespaces: Set[str] = set()
+
     def __init__(self,
                  labels: Union[List[str], List[int]],
                  sequence_field: SequenceField,
@@ -45,13 +52,7 @@ class SequenceLabelField(Field[numpy.ndarray]):
         self.sequence_field = sequence_field
         self._label_namespace = label_namespace
         self._indexed_labels = None
-
-        if not (self._label_namespace.endswith("tags") or self._label_namespace.endswith("labels")):
-            logger.warning("Your sequence label namespace was '%s'. We recommend you use a namespace "
-                           "ending with 'tags' or 'labels', so we don't add UNK and PAD tokens by "
-                           "default to your vocabulary.  See documentation for "
-                           "`non_padded_namespaces` parameter in Vocabulary.", self._label_namespace)
-
+        self._maybe_warn_for_namespace(label_namespace)
         if len(labels) != sequence_field.sequence_length():
             raise ConfigurationError("Label length and sequence length "
                                      "don't match: %d and %d" % (len(labels), sequence_field.sequence_length()))
@@ -63,6 +64,16 @@ class SequenceLabelField(Field[numpy.ndarray]):
             raise ConfigurationError("SequenceLabelFields must be passed either all "
                                      "strings or all ints. Found labels {} with "
                                      "types: {}.".format(labels, [type(x) for x in labels]))
+
+    def _maybe_warn_for_namespace(self, label_namespace: str) -> None:
+        if not (self._label_namespace.endswith("labels") or self._label_namespace.endswith("tags")):
+            if label_namespace not in self._already_warned_namespaces:
+                logger.warning("Your label namespace was '%s'. We recommend you use a namespace "
+                               "ending with 'labels' or 'tags', so we don't add UNK and PAD tokens by "
+                               "default to your vocabulary.  See documentation for "
+                               "`non_padded_namespaces` parameter in Vocabulary.",
+                               self._label_namespace)
+                self._already_warned_namespaces.add(label_namespace)
 
     @overrides
     def count_vocab_items(self, counter: Dict[str, Dict[str, int]]):
@@ -81,14 +92,18 @@ class SequenceLabelField(Field[numpy.ndarray]):
         return {'num_tokens': self.sequence_field.sequence_length()}
 
     @overrides
-    def as_array(self, padding_lengths: Dict[str, int]) -> numpy.ndarray:
+    def as_tensor(self,
+                  padding_lengths: Dict[str, int],
+                  cuda_device: int = -1,
+                  for_training: bool = True) -> torch.Tensor:
         desired_num_tokens = padding_lengths['num_tokens']
         padded_tags = pad_sequence_to_length(self._indexed_labels, desired_num_tokens)
-        return numpy.asarray(padded_tags)
+        tensor = Variable(torch.LongTensor(padded_tags), volatile=not for_training)
+        return tensor if cuda_device == -1 else tensor.cuda(cuda_device)
 
     @overrides
     def empty_field(self):  # pylint: disable=no-self-use
         # pylint: disable=protected-access
-        sequence_label_field = SequenceLabelField([], None)
+        sequence_label_field = SequenceLabelField([], self.sequence_field.empty_field())
         sequence_label_field._indexed_labels = []
         return sequence_label_field

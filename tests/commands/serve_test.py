@@ -2,8 +2,7 @@
 import argparse
 from unittest import TestCase
 
-from allennlp.commands import DEFAULT_MODELS
-from allennlp.commands.serve import add_subparser
+from allennlp.commands.serve import Serve, DEFAULT_MODELS
 
 
 class TestServe(TestCase):
@@ -11,7 +10,7 @@ class TestServe(TestCase):
     def test_add_serve(self):
         parser = argparse.ArgumentParser(description="Testing")
         subparsers = parser.add_subparsers(title='Commands', metavar='')
-        add_subparser(subparsers, trained_models=DEFAULT_MODELS)
+        Serve(DEFAULT_MODELS).add_subparser('serve', subparsers)
 
         raw_args = ["serve",
                     "--port", "8000"]

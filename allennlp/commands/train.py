@@ -6,19 +6,32 @@ which to write the results.
 .. code-block:: bash
 
    $ python -m allennlp.run train --help
-   usage: run [command] train [-h] -s SERIALIZATION_DIR param_path
+   usage: python -m allennlp.run [command] train [-h] -s SERIALIZATION_DIR
+                                               [-o OVERRIDES]
+                                               [--include-package INCLUDE_PACKAGE]
+                                               [--file-friendly-logging]
+                                               param_path
 
    Train the specified model on the specified dataset.
 
    positional arguments:
-   param_path            path to parameter file describing the model to be trained
+   param_path            path to parameter file describing the model to be
+                           trained
 
    optional arguments:
-    -h, --help            show this help message and exit
-    -s SERIALIZATION_DIR, --serialization_dir SERIALIZATION_DIR
-                            directory in which to save the model and its logs
+   -h, --help            show this help message and exit
+   -s SERIALIZATION_DIR, --serialization-dir SERIALIZATION_DIR
+                           directory in which to save the model and its logs
+   -o OVERRIDES, --overrides OVERRIDES
+                           a HOCON structure used to override the experiment
+                           configuration
+   --include-package INCLUDE_PACKAGE
+                           additional packages to include
+   --file-friendly-logging
+                           outputs tqdm status on separate lines and slows tqdm
+                           refresh rate
 """
-
+from typing import Dict, Iterable
 import argparse
 import json
 import logging
@@ -26,43 +39,73 @@ import os
 import sys
 from copy import deepcopy
 
-from allennlp.common.checks import ensure_pythonhashseed_set
+from allennlp.commands.evaluate import evaluate
+from allennlp.commands.subcommand import Subcommand
+from allennlp.common.checks import ConfigurationError
 from allennlp.common.params import Params
 from allennlp.common.tee_logger import TeeLogger
-from allennlp.common.util import prepare_environment
-from allennlp.data import Dataset, Vocabulary
+from allennlp.common.tqdm import Tqdm
+from allennlp.common.util import prepare_environment, import_submodules
+from allennlp.data import Vocabulary
+from allennlp.data.instance import Instance
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
 from allennlp.data.iterators.data_iterator import DataIterator
-from allennlp.models.archival import archive_model
+from allennlp.models.archival import archive_model, CONFIG_NAME
 from allennlp.models.model import Model
 from allennlp.training.trainer import Trainer
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-def add_subparser(parser: argparse._SubParsersAction) -> argparse.ArgumentParser:  # pylint: disable=protected-access
-    description = '''Train the specified model on the specified dataset.'''
-    subparser = parser.add_parser(
-            'train', description=description, help='Train a model')
-    subparser.add_argument('param_path',
-                           type=str,
-                           help='path to parameter file describing the model to be trained')
-    subparser.add_argument('-s', '--serialization_dir',
-                           type=str,
-                           required=True,
-                           help='directory in which to save the model and its logs')
-    subparser.set_defaults(func=_train_model_from_args)
 
-    return subparser
+class Train(Subcommand):
+    def add_subparser(self, name: str, parser: argparse._SubParsersAction) -> argparse.ArgumentParser:
+        # pylint: disable=protected-access
+        description = '''Train the specified model on the specified dataset.'''
+        subparser = parser.add_parser(
+                name, description=description, help='Train a model')
 
+        subparser.add_argument('param_path',
+                               type=str,
+                               help='path to parameter file describing the model to be trained')
 
-def _train_model_from_args(args: argparse.Namespace):
+        # This is necessary to preserve backward compatibility
+        serialization = subparser.add_mutually_exclusive_group(required=True)
+        serialization.add_argument('-s', '--serialization-dir',
+                                   type=str,
+                                   help='directory in which to save the model and its logs')
+
+        subparser.add_argument('-o', '--overrides',
+                               type=str,
+                               default="",
+                               help='a HOCON structure used to override the experiment configuration')
+
+        subparser.add_argument('--include-package',
+                               type=str,
+                               action='append',
+                               default=[],
+                               help='additional packages to include')
+
+        subparser.add_argument('--file-friendly-logging',
+                               action='store_true',
+                               default=False,
+                               help='outputs tqdm status on separate lines and slows tqdm refresh rate')
+
+        subparser.set_defaults(func=train_model_from_args)
+
+        return subparser
+
+def train_model_from_args(args: argparse.Namespace):
     """
     Just converts from an ``argparse.Namespace`` object to string paths.
     """
-    train_model_from_file(args.param_path, args.serialization_dir)
+    # Import any additional modules needed (to register custom classes)
+    for package_name in args.include_package:
+        import_submodules(package_name)
+    train_model_from_file(args.param_path, args.serialization_dir, args.overrides, args.file_friendly_logging)
 
 
-def train_model_from_file(parameter_filename: str, serialization_dir: str) -> Model:
+def train_model_from_file(parameter_filename: str, serialization_dir: str, overrides: str = "",
+                          file_friendly_logging: bool = False) -> Model:
     """
     A wrapper around :func:`train_model` which loads the params from a file.
 
@@ -73,15 +116,46 @@ def train_model_from_file(parameter_filename: str, serialization_dir: str) -> Mo
     serialization_dir: str, required
         The directory in which to save results and logs.
     """
-    # We need the python hashseed to be set if we're training a model
-    ensure_pythonhashseed_set()
-
+    if file_friendly_logging:
+        Tqdm.set_default_mininterval(10.0)
     # Load the experiment config from a file and pass it to ``train_model``.
-    params = Params.from_file(parameter_filename)
-    return train_model(params, serialization_dir)
+    params = Params.from_file(parameter_filename, overrides)
+    return train_model(params, serialization_dir, file_friendly_logging)
 
 
-def train_model(params: Params, serialization_dir: str) -> Model:
+def datasets_from_params(params: Params) -> Dict[str, Iterable[Instance]]:
+    """
+    Load all the datasets specified by the config.
+    """
+    dataset_reader = DatasetReader.from_params(params.pop('dataset_reader'))
+    validation_dataset_reader_params = params.pop("validation_dataset_reader", None)
+
+    validation_and_test_dataset_reader: DatasetReader = dataset_reader
+    if validation_dataset_reader_params is not None:
+        logger.info("Using a separate dataset reader to load validation and test data.")
+        validation_and_test_dataset_reader = DatasetReader.from_params(validation_dataset_reader_params)
+
+    train_data_path = params.pop('train_data_path')
+    logger.info("Reading training data from %s", train_data_path)
+    train_data = dataset_reader.read(train_data_path)
+
+    datasets: Dict[str, Iterable[Instance]] = {"train": train_data}
+
+    validation_data_path = params.pop('validation_data_path', None)
+    if validation_data_path is not None:
+        logger.info("Reading validation data from %s", validation_data_path)
+        validation_data = validation_and_test_dataset_reader.read(validation_data_path)
+        datasets["validation"] = validation_data
+
+    test_data_path = params.pop("test_data_path", None)
+    if test_data_path is not None:
+        logger.info("Reading test data from %s", test_data_path)
+        test_data = validation_and_test_dataset_reader.read(test_data_path)
+        datasets["test"] = test_data
+
+    return datasets
+
+def train_model(params: Params, serialization_dir: str, file_friendly_logging: bool = False) -> Model:
     """
     This function can be used as an entry point to running models in AllenNLP
     directly from a JSON specification using a :class:`Driver`. Note that if
@@ -102,41 +176,39 @@ def train_model(params: Params, serialization_dir: str) -> Model:
     prepare_environment(params)
 
     os.makedirs(serialization_dir, exist_ok=True)
-    sys.stdout = TeeLogger(os.path.join(serialization_dir, "stdout.log"), sys.stdout)  # type: ignore
-    sys.stderr = TeeLogger(os.path.join(serialization_dir, "stderr.log"), sys.stderr)  # type: ignore
+    sys.stdout = TeeLogger(os.path.join(serialization_dir, "stdout.log"), # type: ignore
+                           sys.stdout, file_friendly_logging)
+    sys.stderr = TeeLogger(os.path.join(serialization_dir, "stderr.log"), # type: ignore
+                           sys.stderr, file_friendly_logging)
     handler = logging.FileHandler(os.path.join(serialization_dir, "python_logging.log"))
     handler.setLevel(logging.INFO)
     handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s'))
     logging.getLogger().addHandler(handler)
     serialization_params = deepcopy(params).as_dict(quiet=True)
-    with open(os.path.join(serialization_dir, "model_params.json"), "w") as param_file:
+    with open(os.path.join(serialization_dir, CONFIG_NAME), "w") as param_file:
         json.dump(serialization_params, param_file, indent=4)
 
-    # Now we begin assembling the required parts for the Trainer.
-    dataset_reader = DatasetReader.from_params(params.pop('dataset_reader'))
+    all_datasets = datasets_from_params(params)
+    datasets_for_vocab_creation = set(params.pop("datasets_for_vocab_creation", all_datasets))
 
-    train_data_path = params.pop('train_data_path')
-    logger.info("Reading training data from %s", train_data_path)
-    train_data = dataset_reader.read(train_data_path)
+    for dataset in datasets_for_vocab_creation:
+        if dataset not in all_datasets:
+            raise ConfigurationError(f"invalid 'dataset_for_vocab_creation' {dataset}")
 
-    validation_data_path = params.pop('validation_data_path', None)
-    if validation_data_path is not None:
-        logger.info("Reading validation data from %s", validation_data_path)
-        validation_data = dataset_reader.read(validation_data_path)
-        combined_data = Dataset(train_data.instances + validation_data.instances)
-    else:
-        validation_data = None
-        combined_data = train_data
-
-    vocab = Vocabulary.from_params(params.pop("vocabulary", {}), combined_data)
+    logger.info("Creating a vocabulary using %s data.", ", ".join(datasets_for_vocab_creation))
+    vocab = Vocabulary.from_params(params.pop("vocabulary", {}),
+                                   (instance for key, dataset in all_datasets.items()
+                                    for instance in dataset
+                                    if key in datasets_for_vocab_creation))
     vocab.save_to_files(os.path.join(serialization_dir, "vocabulary"))
 
     model = Model.from_params(vocab, params.pop('model'))
     iterator = DataIterator.from_params(params.pop("iterator"))
+    iterator.index_with(vocab)
 
-    train_data.index_instances(vocab)
-    if validation_data:
-        validation_data.index_instances(vocab)
+    train_data = all_datasets['train']
+    validation_data = all_datasets.get('validation')
+    test_data = all_datasets.get('test')
 
     trainer_params = params.pop("trainer")
     trainer = Trainer.from_params(model,
@@ -145,10 +217,26 @@ def train_model(params: Params, serialization_dir: str) -> Model:
                                   train_data,
                                   validation_data,
                                   trainer_params)
+
+    evaluate_on_test = params.pop_bool("evaluate_on_test", False)
     params.assert_empty('base train command')
-    trainer.train()
+    metrics = trainer.train()
 
     # Now tar up results
-    archive_model(serialization_dir)
+    archive_model(serialization_dir, files_to_archive=params.files_to_archive)
+
+    if test_data and evaluate_on_test:
+        test_metrics = evaluate(model, test_data, iterator, cuda_device=trainer._cuda_devices[0])  # pylint: disable=protected-access
+        for key, value in test_metrics.items():
+            metrics["test_" + key] = value
+
+    elif test_data:
+        logger.info("To evaluate on the test set after training, pass the "
+                    "'evaluate_on_test' flag, or use the 'allennlp evaluate' command.")
+
+    metrics_json = json.dumps(metrics, indent=2)
+    with open(os.path.join(serialization_dir, "metrics.json"), "w") as metrics_file:
+        metrics_file.write(metrics_json)
+    logger.info("Metrics: %s", metrics_json)
 
     return model

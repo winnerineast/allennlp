@@ -99,8 +99,12 @@ class CnnEncoder(Seq2VecEncoder):
         # `(batch_size, num_conv_layers * num_filters)`, which then gets projected using the
         # projection layer, if requested.
 
-        filter_outputs = [self._activation(convolution_layer(tokens)).max(dim=2)[0]
-                          for convolution_layer in self._convolution_layers]
+        filter_outputs = []
+        for i in range(len(self._convolution_layers)):
+            convolution_layer = getattr(self, 'conv_layer_{}'.format(i))
+            filter_outputs.append(
+                    self._activation(convolution_layer(tokens)).max(dim=2)[0]
+            )
 
         # Now we have a list of `num_conv_layers` tensors of shape `(batch_size, num_filters)`.
         # Concatenating them gives us a tensor of shape `(batch_size, num_filters * num_conv_layers)`.
@@ -114,9 +118,9 @@ class CnnEncoder(Seq2VecEncoder):
 
     @classmethod
     def from_params(cls, params: Params) -> 'CnnEncoder':
-        embedding_dim = params.pop('embedding_dim')
-        output_dim = params.pop('output_dim', None)
-        num_filters = params.pop('num_filters')
+        embedding_dim = params.pop_int('embedding_dim')
+        output_dim = params.pop_int('output_dim', None)
+        num_filters = params.pop_int('num_filters')
         conv_layer_activation = Activation.by_name(params.pop("conv_layer_activation", "relu"))()
         ngram_filter_sizes = tuple(params.pop('ngram_filter_sizes', [2, 3, 4, 5]))
         params.assert_empty(cls.__name__)

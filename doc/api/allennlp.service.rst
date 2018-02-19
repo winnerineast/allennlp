@@ -7,8 +7,11 @@ via a REST API or similar.
 
 .. toctree::
 
+   allennlp.service.db
+   allennlp.service.permalinks
    allennlp.service.predictors
-   allennlp.service.server_sanic
+   allennlp.service.server_flask
+   allennlp.service.server_simple
 
 .. automodule:: allennlp.service
    :members:

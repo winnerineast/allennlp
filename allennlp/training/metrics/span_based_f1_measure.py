@@ -1,13 +1,13 @@
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
 from collections import defaultdict
 
 import torch
-from torch.autograd import Variable
 
 from allennlp.common.checks import ConfigurationError
 from allennlp.nn.util import get_lengths_from_binary_sequence_mask, ones_like
 from allennlp.data.vocabulary import Vocabulary
 from allennlp.training.metrics.metric import Metric
+from allennlp.data.dataset_readers.dataset_utils.span_utils import bio_tags_to_spans, TypedStringSpan
 
 
 @Metric.register("span_f1")
@@ -49,7 +49,7 @@ class SpanBasedF1Measure(Metric):
             spans in a BIO tagging scheme which are typically not included.
         """
         self._label_vocabulary = vocabulary.get_index_to_token_vocabulary(tag_namespace)
-        self._ignore_classes = ignore_classes or []
+        self._ignore_classes: List[str] = ignore_classes or []
 
         # These will hold per label span counts.
         self._true_positives: Dict[str, int] = defaultdict(int)
@@ -59,7 +59,8 @@ class SpanBasedF1Measure(Metric):
     def __call__(self,
                  predictions: torch.Tensor,
                  gold_labels: torch.Tensor,
-                 mask: Optional[torch.Tensor] = None):
+                 mask: Optional[torch.Tensor] = None,
+                 prediction_map: Optional[torch.Tensor] = None):
         """
         Parameters
         ----------
@@ -70,18 +71,21 @@ class SpanBasedF1Measure(Metric):
             shape as the ``predictions`` tensor without the ``num_classes`` dimension.
         mask: ``torch.Tensor``, optional (default = None).
             A masking tensor the same size as ``gold_labels``.
+        prediction_map: ``torch.Tensor``, optional (default = None).
+            A tensor of size (batch_size, num_classes) which provides a mapping from the index of predictions
+            to the indices of the label vocabulary. If provided, the output label at each timestep will be
+            ``vocabulary.get_index_to_token_vocabulary(prediction_map[batch, argmax(predictions[batch, t]))``,
+            rather than simply ``vocabulary.get_index_to_token_vocabulary(argmax(predictions[batch, t]))``.
+            This is useful in cases where each Instance in the dataset is associated with a different possible
+            subset of labels from a large label-space (IE FrameNet, where each frame has a different set of
+            possible roles associated with it).
         """
         if mask is None:
             mask = ones_like(gold_labels)
-        # If you actually passed in Variables here instead of Tensors, this will be a huge memory
-        # leak, because it will prevent garbage collection for the computation graph.  We'll ensure
-        # that we're using tensors here first.
-        if isinstance(predictions, Variable):
-            predictions = predictions.data.cpu()
-        if isinstance(gold_labels, Variable):
-            gold_labels = gold_labels.data.cpu()
-        if isinstance(mask, Variable):
-            mask = mask.data.cpu()
+        # Get the data from the Variables.
+        predictions, gold_labels, mask, prediction_map = self.unwrap_to_tensors(predictions,
+                                                                                gold_labels,
+                                                                                mask, prediction_map)
 
         num_classes = predictions.size(-1)
         if (gold_labels >= num_classes).any():
@@ -89,7 +93,13 @@ class SpanBasedF1Measure(Metric):
                                      "id >= {}, the number of classes.".format(num_classes))
 
         sequence_lengths = get_lengths_from_binary_sequence_mask(mask)
-        argmax_predictions = predictions.max(-1)[1].float()
+        argmax_predictions = predictions.max(-1)[1]
+
+        if prediction_map is not None:
+            argmax_predictions = torch.gather(prediction_map, 1, argmax_predictions)
+            gold_labels = torch.gather(prediction_map, 1, gold_labels.long())
+
+        argmax_predictions = argmax_predictions.float()
 
         # Iterate over timesteps in batch.
         batch_size = gold_labels.size(0)
@@ -97,83 +107,67 @@ class SpanBasedF1Measure(Metric):
             sequence_prediction = argmax_predictions[i, :]
             sequence_gold_label = gold_labels[i, :]
             length = sequence_lengths[i]
-            prediction_spans = self._extract_spans(sequence_prediction[:length].tolist())
-            gold_spans = self._extract_spans(sequence_gold_label[:length].tolist())
 
-            for span in prediction_spans:
+            if length == 0:
+                # It is possible to call this metric with sequences which are
+                # completely padded. These contribute nothing, so we skip these rows.
+                continue
+
+            predicted_string_labels = [self._label_vocabulary[label_id]
+                                       for label_id in sequence_prediction[:length].tolist()]
+            gold_string_labels = [self._label_vocabulary[label_id]
+                                  for label_id in sequence_gold_label[:length].tolist()]
+            predicted_spans = bio_tags_to_spans(predicted_string_labels, self._ignore_classes)
+            gold_spans = bio_tags_to_spans(gold_string_labels, self._ignore_classes)
+
+            predicted_spans = self._handle_continued_spans(predicted_spans)
+            gold_spans = self._handle_continued_spans(gold_spans)
+
+            for span in predicted_spans:
                 if span in gold_spans:
-                    self._true_positives[span[1]] += 1
+                    self._true_positives[span[0]] += 1
                     gold_spans.remove(span)
                 else:
-                    self._false_positives[span[1]] += 1
+                    self._false_positives[span[0]] += 1
             # These spans weren't predicted.
             for span in gold_spans:
-                self._false_negatives[span[1]] += 1
+                self._false_negatives[span[0]] += 1
 
-    def _extract_spans(self, tag_sequence: List[int]) -> Set[Tuple[Tuple[int, int], str]]:
+    @staticmethod
+    def _handle_continued_spans(spans: List[TypedStringSpan]) -> List[TypedStringSpan]:
         """
-        Given an integer tag sequence corresponding to BIO tags, extracts spans.
-        Spans are inclusive and can be of zero length, representing a single word span.
-        Ill-formed spans are also included (i.e those which do not start with a "B-LABEL"),
-        as otherwise it is possible to get a perfect precision score whilst still predicting
-        ill-formed spans in addition to the correct spans.
+        The official CONLL 2012 evaluation script for SRL treats continued spans (i.e spans which
+        have a `C-` prepended to another valid tag) as part of the span that they are continuing.
+        This is basically a massive hack to allow SRL models which produce a linear sequence of
+        predictions to do something close to structured prediction. However, this means that to
+        compute the metric, these continutation spans need to be merged into the span to which
+        they refer. The way this is done is to simply consider the span for the continued argument
+        to start at the start index of the first occurence of the span and end at the end index
+        of the last occurence of the span. Handling this is important, because predicting continued
+        spans is difficult and typically will effect overall average F1 score by ~ 2 points.
 
         Parameters
         ----------
-        tag_sequence : List[int], required.
-            The integer class labels for a sequence.
+        spans : ``List[TypedStringSpan]``, required.
+            A list of (label, (start, end)) spans.
 
         Returns
         -------
-        spans : Set[Tuple[Tuple[int, int], str]]
-            The typed, extracted spans from the sequence, in the format ((span_start, span_end), label).
-            Note that the label `does not` contain any BIO tag prefixes.
+        A ``List[TypedStringSpan]`` with continued arguments replaced with a single span.
         """
-        spans = set()
-        span_start = 0
-        span_end = 0
-        active_conll_tag = None
-        for index, integer_tag in enumerate(tag_sequence):
-            # Actual BIO tag.
-            string_tag = self._label_vocabulary[integer_tag]
-            bio_tag = string_tag[0]
-            conll_tag = string_tag[2:]
-            if bio_tag == "O" or conll_tag in self._ignore_classes:
-                # The span has ended.
-                if active_conll_tag:
-                    spans.add(((span_start, span_end), active_conll_tag))
-                active_conll_tag = None
-                # We don't care about tags we are
-                # told to ignore, so we do nothing.
-                continue
-            elif bio_tag == "B":
-                # We are entering a new span; reset indices
-                # and active tag to new span.
-                if active_conll_tag:
-                    spans.add(((span_start, span_end), active_conll_tag))
-                active_conll_tag = conll_tag
-                span_start = index
-                span_end = index
-            elif bio_tag == "I" and conll_tag == active_conll_tag:
-                # We're inside a span.
-                span_end += 1
-            else:
-                # This is the case the bio label is an "I", but either:
-                # 1) the span hasn't started - i.e. an ill formed span.
-                # 2) The span is an I tag for a different conll annotation.
-                # We'll process the previous span if it exists, but also
-                # include this span. This is important, because otherwise,
-                # a model may get a perfect F1 score whilst still including
-                # false positive ill-formed spans.
-                if active_conll_tag:
-                    spans.add(((span_start, span_end), active_conll_tag))
-                active_conll_tag = conll_tag
-                span_start = index
-                span_end = index
-        # Last token might have been a part of a valid span.
-        if active_conll_tag:
-            spans.add(((span_start, span_end), active_conll_tag))
-        return spans
+        span_set: Set[TypedStringSpan] = set(spans)
+        continued_labels: List[str] = [label[2:] for (label, span) in span_set if label.startswith("C-")]
+        for label in continued_labels:
+            continued_spans = {span for span in span_set if label in span[0]}
+
+            span_start = min(span[1][0] for span in continued_spans)
+            span_end = max(span[1][1] for span in continued_spans)
+            replacement_span: TypedStringSpan = (label, (span_start, span_end))
+
+            span_set.difference_update(continued_spans)
+            span_set.add(replacement_span)
+
+        return list(span_set)
 
     def get_metric(self, reset: bool = False):
         """

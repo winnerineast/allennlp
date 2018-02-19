@@ -7,8 +7,7 @@ import torch
 from overrides import overrides
 
 from allennlp.common import Params
-from allennlp.modules.similarity_function import SimilarityFunction
-from allennlp.modules.similarity_functions.dot_product import DotProductSimilarity
+from allennlp.modules.similarity_functions import DotProductSimilarity, SimilarityFunction
 from allennlp.nn.util import masked_softmax
 
 
@@ -64,6 +63,7 @@ class Attention(torch.nn.Module):
     @classmethod
     def from_params(cls, params: Params) -> 'Attention':
         similarity_function = SimilarityFunction.from_params(params.pop('similarity_function', {}))
-        normalize = params.pop('normalize', True)
+        normalize = params.pop_bool('normalize', True)
+        params.assert_empty(cls.__name__)
         return cls(similarity_function=similarity_function,
                    normalize=normalize)

@@ -1,8 +1,9 @@
-from typing import Dict, Union
+from typing import Dict, Union, Set
 import logging
 
 from overrides import overrides
-import numpy
+import torch
+from torch.autograd import Variable
 
 from allennlp.data.fields.field import Field
 from allennlp.data.vocabulary import Vocabulary
@@ -11,7 +12,7 @@ from allennlp.common.checks import ConfigurationError
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class LabelField(Field[numpy.ndarray]):
+class LabelField(Field[torch.Tensor]):
     """
     A ``LabelField`` is a categorical label of some kind, where the labels are either strings of
     text or 0-indexed integers (if you wish to skip indexing by passing skip_indexing=True).
@@ -35,6 +36,12 @@ class LabelField(Field[numpy.ndarray]):
         If your labels are 0-indexed integers, you can pass in this flag, and we'll skip the indexing
         step.  If this is ``False`` and your labels are not strings, this throws a ``ConfigurationError``.
     """
+    # It is possible that users want to use this field with a namespace which uses OOV/PAD tokens.
+    # This warning will be repeated for every instantiation of this class (i.e for every data
+    # instance), spewing a lot of warnings so this class variable is used to only log a single
+    # warning per namespace.
+    _already_warned_namespaces: Set[str] = set()
+
     def __init__(self,
                  label: Union[str, int],
                  label_namespace: str = 'labels',
@@ -42,11 +49,8 @@ class LabelField(Field[numpy.ndarray]):
         self.label = label
         self._label_namespace = label_namespace
         self._label_id = None
-        if not (self._label_namespace.endswith("labels") or self._label_namespace.endswith("tags")):
-            logger.warning("Your label namespace was '%s'. We recommend you use a namespace "
-                           "ending with 'labels' or 'tags', so we don't add UNK and PAD tokens by "
-                           "default to your vocabulary.  See documentation for "
-                           "`non_padded_namespaces` parameter in Vocabulary.", self._label_namespace)
+        self._maybe_warn_for_namespace(label_namespace)
+
         if skip_indexing:
             if not isinstance(label, int):
                 raise ConfigurationError("In order to skip indexing, your labels must be integers. "
@@ -57,6 +61,16 @@ class LabelField(Field[numpy.ndarray]):
             if not isinstance(label, str):
                 raise ConfigurationError("LabelFields must be passed a string label if skip_indexing=False. "
                                          "Found label: {} with type: {}.".format(label, type(label)))
+
+    def _maybe_warn_for_namespace(self, label_namespace: str) -> None:
+        if not (self._label_namespace.endswith("labels") or self._label_namespace.endswith("tags")):
+            if label_namespace not in self._already_warned_namespaces:
+                logger.warning("Your label namespace was '%s'. We recommend you use a namespace "
+                               "ending with 'labels' or 'tags', so we don't add UNK and PAD tokens by "
+                               "default to your vocabulary.  See documentation for "
+                               "`non_padded_namespaces` parameter in Vocabulary.",
+                               self._label_namespace)
+                self._already_warned_namespaces.add(label_namespace)
 
     @overrides
     def count_vocab_items(self, counter: Dict[str, Dict[str, int]]):
@@ -73,9 +87,14 @@ class LabelField(Field[numpy.ndarray]):
         return {}
 
     @overrides
-    def as_array(self, padding_lengths: Dict[str, int]) -> numpy.ndarray:  # pylint: disable=unused-argument
-        return numpy.asarray([self._label_id])
+    def as_tensor(self,
+                  padding_lengths: Dict[str, int],
+                  cuda_device: int = -1,
+                  for_training: bool = True) -> torch.Tensor:
+        # pylint: disable=unused-argument
+        tensor = Variable(torch.LongTensor([self._label_id]), volatile=not for_training)
+        return tensor if cuda_device == -1 else tensor.cuda(cuda_device)
 
     @overrides
     def empty_field(self):
-        return LabelField(0, self._label_namespace)
+        return LabelField(-1, self._label_namespace, skip_indexing=True)

@@ -50,7 +50,6 @@ run chmod 600 ./pypirc so only you can read/write.
 7. Copy the release notes from RELEASE.md to the tag in github once everything is looking hunky-dory.
 
 """
-import os
 from setuptools import setup, find_packages
 
 # PEP0440 compatible formatted version, see:
@@ -66,11 +65,14 @@ from setuptools import setup, find_packages
 #   X.YrcN  # Release Candidate
 #   X.Y     # Final release
 
-VERSION = '0.2.1'
-
+# version.py defines the VERSION and VERSION_SHORT variables.
+# We use exec here so we don't import allennlp whilst setting up.
+VERSION = {}
+with open("allennlp/version.py", "r") as version_file:
+    exec(version_file.read(), VERSION)
 
 setup(name='allennlp',
-      version=VERSION,
+      version=VERSION["VERSION"],
       description='An open-source NLP research library, built on PyTorch.',
       classifiers=[
           'Intended Audience :: Science/Research',
@@ -90,16 +92,23 @@ setup(name='allennlp',
           'typing',
           'overrides',
           'nltk',
-          'spacy',
+          'spacy>=2.0,<2.1',
           'numpy',
-          'pillow',
-          'tensorboard-pytorch',
+          'tensorboard==1.0.0a6',
+          'cffi==1.11.2',
           'awscli>=1.11.91',
-          'sanic==0.6.0',
+          'flask==0.12.1',
+          'flask-cors==3.0.3',
+          'gevent==1.2.2',
+          'psycopg2',
           'argparse',
           'requests>=2.18',
-          'tqdm',
-          'jupyter'
+          'tqdm>=4.19',
+          'editdistance',
+          'h5py',
+          'scikit-learn',
+          'scipy',
+          'pytz==2017.3'
       ],
       setup_requires=['pytest-runner'],
       tests_require=['pytest'],

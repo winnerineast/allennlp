@@ -1,4 +1,8 @@
 import React from 'react';
+import HeatMap from './heatmap/HeatMap'
+import Collapsible from 'react-collapsible'
+import { API_ROOT } from '../api-config';
+import { withRouter } from 'react-router-dom';
 import {PaneLeft, PaneRight} from './Pane'
 import Button from './Button'
 import ModelIntro from './ModelIntro'
@@ -27,12 +31,38 @@ const mcExamples = [
     }
 ];
 
+const title = "Machine Comprehension";
+const description = (
+  <span>
+    <span>
+      Machine Comprehension (MC) answers natural language questions by selecting an answer span within an evidence text.
+      The AllenNLP toolkit provides the following MC visualization, which can be used for any MC model in AllenNLP.
+      This page demonstrates a reimplementation of
+    </span>
+    <a href = "https://www.semanticscholar.org/paper/Bidirectional-Attention-Flow-for-Machine-Comprehen-Seo-Kembhavi/007ab5528b3bd310a80d553cccad4b78dc496b02" target="_blank" rel="noopener noreferrer">{' '} BiDAF (Seo et al, 2017)</a>
+    <span>
+      , or Bi-Directional Attention Flow,
+      a widely used MC baseline that achieved state-of-the-art accuracies on
+    </span>
+    <a href = "https://rajpurkar.github.io/SQuAD-explorer/" target="_blank" rel="noopener noreferrer">{' '} the SQuAD dataset {' '}</a>
+    <span>
+      (Wikipedia sentences) in early 2017.
+    </span>
+  </span>
+);
+
+
 class McInput extends React.Component {
-constructor() {
-    super();
+constructor(props) {
+    super(props);
+
+    // If we're showing a permalinked result,
+    // we'll get passed in a passage and question.
+    const { passage, question } = props;
+
     this.state = {
-    mcPassageValue: "",
-    mcQuestionValue: "",
+      mcPassageValue: passage || "",
+      mcQuestionValue: question || ""
     };
     this.handleListChange = this.handleListChange.bind(this);
     this.handleQuestionChange = this.handleQuestionChange.bind(this);
@@ -41,16 +71,16 @@ constructor() {
 
 handleListChange(e) {
     if (e.target.value !== "") {
-    this.setState({
-        mcPassageValue: mcExamples[e.target.value].passage,
-        mcQuestionValue: mcExamples[e.target.value].question,
-    });
+      this.setState({
+          mcPassageValue: mcExamples[e.target.value].passage,
+          mcQuestionValue: mcExamples[e.target.value].question,
+      });
     }
 }
 
 handlePassageChange(e) {
     this.setState({
-    mcPassageValue: e.target.value,
+      mcPassageValue: e.target.value,
     });
 }
 
@@ -70,26 +100,6 @@ render() {
     "questionValue": mcQuestionValue
     };
 
-    const title = "Machine Comprehension";
-    const description = (
-      <div>
-        <span>
-          Machine Comprehension (MC) answers natural language questions by selecting an answer span within an evidence text.
-          The AllenNLP toolkit provides the following MC visualization, which can be used for any MC model in AllenNLP.
-          This page demonstrates a reimplementation of
-        </span>
-        <a href = "https://www.semanticscholar.org/paper/Bidirectional-Attention-Flow-for-Machine-Comprehen-Seo-Kembhavi/007ab5528b3bd310a80d553cccad4b78dc496b02" target="_blank" rel="noopener noreferrer">{' '} BiDAF (Seo et al, 2017)</a>
-        <span>
-          , or Bi-Directional Attention Flow,
-          a widely used MC baseline that achieved state-of-the-art accuracies on
-        </span>
-        <a href = "https://rajpurkar.github.io/SQuAD-explorer/" target="_blank" rel="noopener noreferrer">{' '} the SQuAD dataset {' '}</a>
-        <span>
-          (Wikipedia sentences) in early 2017.
-        </span>
-      </div>
-    );
-
     return (
         <div className="model__content">
         <ModelIntro title={title} description={description} />
@@ -97,9 +107,9 @@ render() {
             <select disabled={outputState === "working"} onChange={this.handleListChange}>
                 <option value="">Choose an example...</option>
                 {mcExamples.map((example, index) => {
-                return (
-                    <option value={index} key={index}>{example.passage.substring(0,60) + "..."}</option>
-                );
+                  return (
+                      <option value={index} key={index}>{example.passage.substring(0,60) + "..."}</option>
+                  );
                 })}
             </select>
             </div>
@@ -112,7 +122,7 @@ render() {
             <input onChange={this.handleQuestionChange} id="input--mc-question" type="text" required="true" value={mcQuestionValue} placeholder="E.g. &quot;What does Saturn’s astronomical symbol represent?&quot;" disabled={outputState === "working"} />
             </div>
             <div className="form__field form__field--btn">
-            <Button outputState={outputState} runModel={runMcModel} inputs={mcInputs} />
+            <Button enabled={outputState !== "working"} runModel={runMcModel} inputs={mcInputs} />
             </div>
         </div>
         );
@@ -126,7 +136,8 @@ render() {
 
 class McOutput extends React.Component {
     render() {
-      const { passage, answer } = this.props;
+      const { passage, answer, attention, question_tokens, passage_tokens } = this.props;
+
       const start = passage.indexOf(answer);
       const head = passage.slice(0, start);
       const tail = passage.slice(start + answer.length);
@@ -146,6 +157,20 @@ class McOutput extends React.Component {
               <span>{tail}</span>
             </div>
           </div>
+
+          <div className="form__field">
+            <Collapsible trigger="Model internals (beta)">
+              <Collapsible trigger="Passage to Question attention">
+                <span>
+                  For every passage word, the model computes an attention over the question words.
+                  This heatmap shows that attention, which is normalized for every row in the matrix.
+                </span>
+                <div className="heatmap">
+                  <HeatMap xLabels={question_tokens} yLabels={passage_tokens} data={attention} />
+                </div>
+              </Collapsible>
+            </Collapsible>
+          </div>
         </div>
       );
     }
@@ -156,29 +181,29 @@ class McOutput extends React.Component {
   <McComponent /> Component
 *******************************************************************************/
 
-class McComponent extends React.Component {
-    constructor() {
-      super();
+class _McComponent extends React.Component {
+    constructor(props) {
+      super(props);
+
+      const { requestData, responseData } = props;
 
       this.state = {
-        outputState: "empty", // valid values: "working", "empty", "received", "error"
-        passage: "",
-        answer: "",
+        outputState: responseData ? "received" : "empty", // valid values: "working", "empty", "received", "error"
+        requestData: requestData,
+        responseData: responseData
       };
 
       this.runMcModel = this.runMcModel.bind(this);
     }
 
     runMcModel(event, inputs) {
-      this.setState({
-        outputState: "working",
-      });
+      this.setState({outputState: "working"});
 
       var payload = {
         passage: inputs.passageValue,
         question: inputs.questionValue,
       };
-      fetch('/predict/machine-comprehension', {
+      fetch(`${API_ROOT}/predict/machine-comprehension`, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
@@ -188,27 +213,55 @@ class McComponent extends React.Component {
       }).then((response) => {
         return response.json();
       }).then((json) => {
-        this.setState({answer: json["best_span_str"]});
-        this.setState({passage: inputs.passageValue});
-        this.setState({outputState: "received"});
+        // If the response contains a `slug` for a permalink, we want to redirect
+        // to the corresponding path using `history.push`.
+        const { slug } = json;
+        const newPath = slug ? '/machine-comprehension/' + slug : '/machine-comprehension';
+
+        // We'll pass the request and response data along as part of the location object
+        // so that the `Demo` component can use them to re-render.
+        const location = {
+          pathname: newPath,
+          state: { requestData: payload, responseData: json }
+        }
+        this.props.history.push(location);
       }).catch((error) => {
         this.setState({outputState: "error"});
-        throw error; // todo(michaels): is this right?
+        console.error(error);
       });
     }
 
     render() {
+      const { requestData, responseData } = this.props;
+
+      const passage = requestData && requestData.passage;
+      const question = requestData && requestData.question;
+      const answer = responseData && responseData.best_span_str;
+      const attention = responseData && responseData.passage_question_attention;
+      const question_tokens = responseData && responseData.question_tokens;
+      const passage_tokens = responseData && responseData.passage_tokens;
+
       return (
         <div className="pane model">
           <PaneLeft>
-            <McInput runMcModel={this.runMcModel} outputState={this.state.outputState}/>
+            <McInput runMcModel={this.runMcModel}
+                     outputState={this.state.outputState}
+                     passage={passage}
+                     question={question}/>
           </PaneLeft>
           <PaneRight outputState={this.state.outputState}>
-            <McOutput answer={this.state.answer} passage={this.state.passage} />
+            <McOutput passage={passage}
+                      answer={answer}
+                      attention={attention}
+                      question_tokens={question_tokens}
+                      passage_tokens={passage_tokens}/>
           </PaneRight>
         </div>
       );
+
     }
 }
+
+const McComponent = withRouter(_McComponent);
 
 export default McComponent;

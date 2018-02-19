@@ -1,10 +1,8 @@
 <p align="center"><img width="40%" src="doc/static/allennlp-logo-dark.png" /></p>
 
-
-[![Build Status](https://travis-ci.org/allenai/allennlp.svg?branch=master)](https://travis-ci.org/allenai/allennlp)
+[![Build Status](http://build.allennlp.org/app/rest/builds/buildType:(id:AllenNLP_AllenNLPCommits)/statusIcon)](http://build.allennlp.org/viewType.html?buildTypeId=AllenNLP_AllenNLPCommits&guest=1)
 [![codecov](https://codecov.io/gh/allenai/allennlp/branch/master/graph/badge.svg)](https://codecov.io/gh/allenai/allennlp)
-[![docs](https://readthedocs.org/projects/allennlp/badge/?version=latest)](https://readthedocs.org/projects/allennlp/)
-[![docker](https://images.microbadger.com/badges/image/allennlp/allennlp.svg)](https://microbadger.com/images/allennlp/allennlp)
+[![docker](https://images.microbadger.com/badges/version/allennlp/allennlp.svg)](https://microbadger.com/images/allennlp/allennlp)
 
 An [Apache 2.0](https://github.com/allenai/allennlp/blob/master/LICENSE) NLP research library, built on PyTorch,
 for developing state-of-the-art deep learning models on a wide variety of linguistic tasks.
@@ -12,15 +10,15 @@ for developing state-of-the-art deep learning models on a wide variety of lingui
 ## Quickstart
 
 The fastest way to get an environment to run AllenNLP is with Docker.  Once you have [installed Docker](https://docs.docker.com/engine/installation/)
-just run `docker run -it --rm allennlp/allennlp` to get an environment that will run on either the cpu or gpu.
+just run `docker run -it --rm allennlp/allennlp:v0.3.0` to get an environment that will run on either the cpu or gpu.
 
 Now you can do any of the following:
 
-* Run a model on example sentences with `allennlp/run bulk`.
-* Start a web service to host our models with `allennlp/run serve`.
+* Run a model on example sentences with `python -m allennlp.run predict`.
+* Start a web service to host our models with `python -m allennlp.run serve`.
 * Interactively code against AllenNLP from the Python interpreter with `python`.
 
-You can also install via the `pip` package manager or by cloning this repository into a Python 3.6 virtualenv.
+You can also install via the `pip` package manager or by cloning this repository into a Python 3.6 environment.
 See below for more detailed instructions.
 
 ## What is AllenNLP?
@@ -85,78 +83,105 @@ state of the art models with high quality engineering.
 
 ## Running AllenNLP
 
-### Setting up a Conda development environment
+### Setting up a virtual environment
 
-[Conda](https://conda.io/) will set up a virtual environment with the exact version of Python
-used for development along with all the dependencies needed to run AllenNLP.
+[Conda](https://conda.io/) can be used set up a virtual environment
+with the version of Python required for AllenNLP and in which you can
+sandbox its dependencies:
 
 1.  [Download and install Conda](https://conda.io/docs/download.html).
 
-2.  Change your directory to your clone of AllenNLP.
-
-    ```
-    cd allennlp
-    ```
-
-3.  Create a Conda environment with Python 3.6
+2.  Create a Conda environment with Python 3.6
 
     ```
     conda create -n allennlp python=3.6
     ```
 
-4.  Now activate the Conda environment.  You will need to activate the Conda environment in each terminal in which you want to use AllenNLP.
+3.  Activate the Conda environment.  (You will need to activate the Conda environment in each terminal in which you want to use AllenNLP.
 
     ```
     source activate allennlp
     ```
 
-5.  Install the required dependencies.
+4. Install AllenNLP in your environment.
+
+### Installing via pip
+
+The preferred way to install AllenNLP into your environment is via `pip`.
+
+1.  Install AllenNLP.
+
+    ```
+    pip install allennlp
+    ```
+
+2. Visit http://pytorch.org/ and install the PyTorch 0.3.0 package for your system.
+
+3. Download the spacy models. 
+
+    ```
+    python -m spacy download en_core_web_sm
+    ```
+
+That's it! You're now ready to build and train AllenNLP models.
+
+### Setting up a development environment
+
+If you want to make changes to AllenNLP library itself
+(or use bleeding-edge code that hasn't been released to PyPI)
+you'll need to install the library from GitHub and manually install the requirements:
+
+1. First, clone the repo:
+
+```
+git clone https://github.com/allenai/allennlp.git
+```
+
+2. Change your directory to where you cloned the files:
+
+```
+cd allennlp
+```
+
+3.  Install the required dependencies.
 
     ```
     INSTALL_TEST_REQUIREMENTS="true" ./scripts/install_requirements.sh
     ```
 
-6. Visit http://pytorch.org/ and install the relevant pytorch package.
+4. Visit http://pytorch.org/ and install the relevant pytorch package.
 
-7.  Set the `PYTHONHASHSEED` for repeatable experiments.  You may want to put this in your `.bashrc`.
-
-    ```
-    export PYTHONHASHSEED=2157
-    ```
-
-You should now be able to test your installation with `pytest -v`.  Congratulations!
-
-### Installing via pip
-
-AllenNLP also has a pip package if you wish to use allennlp as a library. Install with:
-
-```
-pip install allennlp
-```
-
-This installation method is still a little experimental. Please [open an issue](https://github.com/allenai/allennlp/issues)
-if you encounter issues after following the instructions to create a virtual environment above.
+You should now be able to test your installation with `./scripts/verify.py`.  Congratulations!
 
 ### Setting up a Docker development environment
 
-Docker provides a virtual machine with everything set up to run AllenNLP--whether you will leverage a GPU or just
-run on a CPU.  Docker provides more isolation and consistency, and also makes it easy to distribute your environment
+A third option is to run AllenNLP via Docker.
+Docker provides a virtual machine with everything set up to run AllenNLP--
+whether you will leverage a GPU or just run on a CPU.
+Docker provides more isolation and consistency,
+and also makes it easy to distribute your environment
 to a compute cluster.
 
 #### Downloading a pre-built Docker image
 
-It is easy to run a pre-built Docker development environment.  AllenNLP is configured with Docker Cloud to build a
-new image on every update to the master branch.  To download an image from [Docker Hub](https://hub.docker.com/r/allennlp/):
+It is easy to run a pre-built Docker development environment.
+AllenNLP is configured with Docker Cloud to build a
+new image on every update to the master branch.  To download
+the latest released from [Docker Hub](https://hub.docker.com/r/allennlp/) just run:
 
 ```bash
-docker pull allennlp/allennlp:latest
+docker pull allennlp/allennlp:v0.3.0
 ```
 
 #### Building a Docker image
 
-Following are instructions on creating a Docker environment that works on a CPU
-or GPU.  The following command will take some time, as it completely builds the
-environment needed to run AllenNLP.
+For various reasons you may need to create your own AllenNLP Docker image.
+The same image can be used either with a CPU or a GPU.
+
+First, follow the instructions above for setting up a development environment.
+Then run the following command
+(it will take some time, as it completely builds the
+environment needed to run AllenNLP.)
 
 ```bash
 docker build --tag allennlp/allennlp .
@@ -174,31 +199,11 @@ allennlp/allennlp            latest              b66aee6cb593        5 minutes a
 You can run the image with `docker run --rm -it allennlp/allennlp`.  The `--rm` flag cleans up the image on exit and the
 `-it` flags make the session interactive so you can use the bash shell the Docker image starts.
 
-The Docker environment uses Conda to install Python and automatically enters the Conda environment "allennlp".
+You can test your installation by running  `./scripts/verify.py`.
 
-You can test your installation by running  `pytest -v`.
-
-
-### Setting up a Kubernetes development environment
-
-Kubernetes will deploy your Docker images into the cloud, so you can have a reproducible development environment on AWS.
-
-1. Set up `kubectl` to connect to your Kubernetes cluster.
-
-2. Run `kubectl create -f /path/to/kubernetes-dev-environment.yaml`.  This will create a "job" on the cluster which you
-can later connect to using bash.  Note that you will be using the last Dockerfile that would pushed, and so the source
-code may not match what you have locally.
-
-4. Retrieve the name of the pod created with `kubectl describe job <JOBNAME> --namespace=allennlp`.
-The pod name will be your job name followed by some additional characters.
-
-5. Get a shell inside the container using `kubectl exec -it <PODNAME> bash`
-
-6. When you are done, don't forget to kill your job using `kubectl delete -f /path/to/kubernetes-dev-environment.yaml`
 
 ## Team
 
 AllenNLP is an open-source project backed by [the Allen Institute for Artificial Intelligence (AI2)](http://www.allenai.org).
 AI2 is a non-profit institute with the mission to contribute to humanity through high-impact AI research and engineering.
-To learn more about who specifically contributed to this codebase, see [our contributors](https://github.com/allenai/allennlp/graphs/contributors)
-page.
+To learn more about who specifically contributed to this codebase, see [our contributors](https://github.com/allenai/allennlp/graphs/contributors) page.

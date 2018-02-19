@@ -4,7 +4,8 @@ import numpy
 
 from allennlp.common.checks import ConfigurationError
 from allennlp.common.testing import AllenNlpTestCase
-from allennlp.data import Dataset, Instance, Token, Vocabulary
+from allennlp.data import Instance, Token, Vocabulary
+from allennlp.data.dataset import Batch
 from allennlp.data.fields import TextField, LabelField
 from allennlp.data.token_indexers import SingleIdTokenIndexer
 
@@ -18,34 +19,35 @@ class TestDataset(AllenNlpTestCase):
         self.vocab.add_token_to_namespace("sentence")
         self.vocab.add_token_to_namespace(".")
         self.token_indexer = {"tokens": SingleIdTokenIndexer()}
+        self.instances = self.get_instances()
         super(TestDataset, self).setUp()
 
     def test_instances_must_have_homogeneous_fields(self):
         instance1 = Instance({"tag": (LabelField(1, skip_indexing=True))})
         instance2 = Instance({"words": TextField([Token("hello")], {})})
         with pytest.raises(ConfigurationError):
-            _ = Dataset([instance1, instance2])
+            _ = Batch([instance1, instance2])
 
     def test_padding_lengths_uses_max_instance_lengths(self):
-        dataset = self.get_dataset()
+        dataset = Batch(self.instances)
         dataset.index_instances(self.vocab)
         padding_lengths = dataset.get_padding_lengths()
         assert padding_lengths == {"text1": {"num_tokens": 5}, "text2": {"num_tokens": 6}}
 
-    def test_as_array_dict(self):
-        dataset = self.get_dataset()
+    def test_as_tensor_dict(self):
+        dataset = Batch(self.instances)
         dataset.index_instances(self.vocab)
         padding_lengths = dataset.get_padding_lengths()
-        arrays = dataset.as_array_dict(padding_lengths)
-        text1 = arrays["text1"]["tokens"]
-        text2 = arrays["text2"]["tokens"]
+        tensors = dataset.as_tensor_dict(padding_lengths)
+        text1 = tensors["text1"]["tokens"].data.cpu().numpy()
+        text2 = tensors["text2"]["tokens"].data.cpu().numpy()
 
         numpy.testing.assert_array_almost_equal(text1, numpy.array([[2, 3, 4, 5, 6],
                                                                     [1, 3, 4, 5, 6]]))
         numpy.testing.assert_array_almost_equal(text2, numpy.array([[2, 3, 4, 1, 5, 6],
                                                                     [2, 3, 1, 0, 0, 0]]))
 
-    def get_dataset(self):
+    def get_instances(self):
         field1 = TextField([Token(t) for t in ["this", "is", "a", "sentence", "."]],
                            self.token_indexer)
         field2 = TextField([Token(t) for t in ["this", "is", "a", "different", "sentence", "."]],
@@ -56,4 +58,4 @@ class TestDataset(AllenNlpTestCase):
                            self.token_indexer)
         instances = [Instance({"text1": field1, "text2": field2}),
                      Instance({"text1": field3, "text2": field4})]
-        return Dataset(instances)
+        return instances

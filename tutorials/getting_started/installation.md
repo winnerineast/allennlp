@@ -1,8 +1,4 @@
----
-layout: tutorial
-title: Getting Started
-id: getting-started
----
+# Installation and Getting Started
 
 Welcome to AllenNLP!
 
@@ -22,23 +18,22 @@ and shuts down the container when you exit the interactive shell.
 
 ## Installing using pip
 
-You can install `allennlp` using pip. Create a Python 3.6 virtual environment, and run
+You can install `allennlp` using pip in three easy steps.
 
-```bash
-$ pip install allennlp
-```
+1.  Create a Python 3.6 virtual environment, and run
 
-You'll also need to install PyTorch 0.2, following the appropriate instructions
-for your platform from [their website](http://pytorch.org/).
+    ```bash
+    $ pip install allennlp
+    ```
 
-Finally, you'll need to download spaCy's English models:
+2.  You'll also need to install PyTorch 0.3, following the appropriate instructions
+    for your platform from [their website](http://pytorch.org/).
 
-```bash
-$ python -m spacy download en
-```
+3.  Finally, you'll need to download spaCy's English models:
 
-This is the least-battle-tested method of installation,
-so please let us know if anything doesn't work right.
+    ```bash
+    $ python -m spacy download en
+    ```
 
 ## Installing from source
 
@@ -48,7 +43,8 @@ A third alternative is to clone from our git repository:
 $ git clone https://github.com/allenai/allennlp.git
 ```
 
-Create a Python 3.6 virtual environment, and run
+Create a Python 3.6 virtual environment, and install the necessary requirements
+by running:
 
 ```bash
 $ INSTALL_TEST_REQUIREMENTS=true scripts/install_requirements.sh
@@ -57,7 +53,7 @@ $ INSTALL_TEST_REQUIREMENTS=true scripts/install_requirements.sh
 changing the flag to `false` if you don't want to be able to run tests.
 (Narrator: You want to be able to run tests.)
 
-You'll also need to install PyTorch 0.2, following the appropriate instructions
+You'll also need to install PyTorch 0.3, following the appropriate instructions
 for your platform from [their website](http://pytorch.org/).
 
 ## Once You've Installed
@@ -92,25 +88,7 @@ about them.
 ### Serving the Demo
 
 The `serve` command starts the demo server.
-If you are using the Docker image, all the relevant files
-are included and you don't have to do anything special.
-
-If you have installed from source, you'll need to build the files
-(for which you'll need [npm](https://www.npmjs.com/get-npm)):
-
-```bash
-cd demo
-npm install
-npm run build
-cd ..
-```
-
-After which the files for the demo website will be in `demo/build`.
-
-Currently `serve` doesn't work if you installed using `pip`,
-as the static files for the demo website don't get installed. We're working on it.
-
-The first time you run `serve`, it will download
+The first time you run it, it will download
 several large serialized models from Amazon S3.
 
 ```
@@ -123,6 +101,8 @@ Starting a sanic server on port 8000.
 2017-08-16 18:55:12,323 - INFO - sanic - Starting worker [33290]
 ```
 
+(Currently `serve` doesn't work if you installed using `pip`,
+ as the static files for the demo website don't get installed. We're working on it.)
 
 If you now visit `http://localhost:8000` in your browser, you can play around with the same demo
 that runs on the AllenNLP website.
@@ -131,4 +111,4 @@ that runs on the AllenNLP website.
 
 ### Next Steps
 
-Continue on to the [Training a Model](training_a_model.md) tutorial.
+Continue on to the [Training and Evaluating Models](training_and_evaluating.md) tutorial.

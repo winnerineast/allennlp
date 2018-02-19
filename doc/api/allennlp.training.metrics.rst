@@ -10,8 +10,12 @@ allennlp.training.metrics
 * :ref:`Average<average>`
 * :ref:`BooleanAccuracy<boolean-accuracy>`
 * :ref:`CategoricalAccuracy<categorical-accuracy>`
+* :ref:`Entropy<entropy>`
 * :ref:`F1Measure<f1-measure>`
 * :ref:`SpanBasedF1Measure<span-based-f1-measure>`
+* :ref:`SquadEmAndF1<squad-em-and-f1>`
+* :ref:`MentionRecall<mention-recall>`
+* :ref:`ConllCorefScores<conll-coref-scores>`
 
 
 .. _metric:
@@ -38,6 +42,12 @@ allennlp.training.metrics
    :undoc-members:
    :show-inheritance:
 
+.. _entropy:
+.. automodule:: allennlp.training.metrics.entropy
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 .. _f1-measure:
 .. automodule:: allennlp.training.metrics.f1_measure
    :members:
@@ -49,3 +59,22 @@ allennlp.training.metrics
    :members:
    :undoc-members:
    :show-inheritance:
+
+.. _squad-em-and-f1:
+.. automodule:: allennlp.training.metrics.squad_em_and_f1
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. _mention-recall:
+.. automodule:: allennlp.training.metrics.mention_recall
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. _conll-coref-scores:
+.. automodule:: allennlp.training.metrics.conll_coref_scores
+   :members:
+   :undoc-members:
+   :show-inheritance:
+

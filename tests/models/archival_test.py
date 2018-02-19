@@ -1,21 +1,20 @@
 # pylint: disable=invalid-name
 import os
 import copy
-import pathlib
 
 import torch
 
 from allennlp.common import Params
 from allennlp.common.testing import AllenNlpTestCase
 from allennlp.commands.train import train_model
-from allennlp.models.archival import load_archive, _sanitize_config
+from allennlp.models.archival import load_archive, archive_model
 
 
 class ArchivalTest(AllenNlpTestCase):
-    def test_archiving(self):
-        super(ArchivalTest, self).setUp()
+    def setUp(self):
+        super().setUp()
 
-        params = Params({
+        self.params = Params({
                 "model": {
                         "type": "simple_tagger",
                         "text_field_embedder": {
@@ -41,11 +40,12 @@ class ArchivalTest(AllenNlpTestCase):
                 }
         })
 
+    def test_archiving(self):
         # copy params, since they'll get consumed during training
-        params_copy = copy.deepcopy(params.as_dict())
+        params_copy = copy.deepcopy(self.params.as_dict())
 
         # `train_model` should create an archive
-        model = train_model(params, serialization_dir=self.TEST_DIR)
+        model = train_model(self.params, serialization_dir=self.TEST_DIR)
 
         archive_path = os.path.join(self.TEST_DIR, "model.tar.gz")
 
@@ -73,53 +73,23 @@ class ArchivalTest(AllenNlpTestCase):
         params2 = archive.config
         assert params2.as_dict() == params_copy
 
-    def test_sanitize(self):
-        super(ArchivalTest, self).setUp()
+    def test_extra_files(self):
 
-        config = Params({
-                "model": {
-                        "type": "bidaf",
-                        "text_field_embedder": {
-                                "tokens": {
-                                        "type": "embedding",
-                                        "embedding_dim": 5
-                                }
-                        },
-                        "stacked_encoder": {
-                                "type": "lstm",
-                                "input_size": 5,
-                                "hidden_size": 7,
-                                "num_layers": 2
-                        }
-                },
-                "dataset_reader": {"type": "sequence_tagging"},
-                "train_data_path": 'tests/fixtures/data/sequence_tagging.tsv',
-                "validation_data_path": 'tests/fixtures/data/sequence_tagging.tsv',
-                "iterator": {"type": "basic", "batch_size": 2},
-                "trainer": {
-                        "num_epochs": 2,
-                        "optimizer": "adam",
-                }
-        })
+        serialization_dir = os.path.join(self.TEST_DIR, 'serialization')
 
-        # Create file and add to config
-        filename = os.path.join(self.TEST_DIR, "existing_file")
-        pathlib.Path(filename).touch()
-        config["model"]["evaluation_json_file"] = filename
+        # Train a model
+        train_model(self.params, serialization_dir=serialization_dir)
 
-        original = copy.deepcopy(config.as_dict())
+        # Archive model, and also archive the training data
+        files_to_archive = {"train_data_path": 'tests/fixtures/data/sequence_tagging.tsv'}
+        archive_model(serialization_dir=serialization_dir, files_to_archive=files_to_archive)
 
-        # file exists, so nothing should happen
-        _sanitize_config(config)
-        assert "evaluation_json_file" in config["model"]
-        assert config.as_dict() == original
+        archive = load_archive(os.path.join(serialization_dir, 'model.tar.gz'))
+        params = archive.config
 
-        # remove file, then sanitize should get rid of the key
-        os.remove(filename)
-        _sanitize_config(config)
-        assert config.as_dict() != original
-        assert "evaluation_json_file" not in config["model"]
+        # The param in the data should have been replaced with a temporary path
+        # (which we don't know, but we know what it ends with).
+        assert params.get('train_data_path').endswith('/fta/train_data_path')
 
-        # shouldn't have removed anything else
-        config["model"]["evaluation_json_file"] = filename
-        assert config.as_dict() == original
+        # The validation data path should be the same though.
+        assert params.get('validation_data_path') == 'tests/fixtures/data/sequence_tagging.tsv'
